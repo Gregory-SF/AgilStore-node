@@ -1,0 +1,21 @@
+{
+  "name": "agilstore-node",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "scripts": {
+    "start": "npx ts-node \"./src/main.ts\"",
+    "test": ""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "nodemon": "^3.1.9"
+  }
+}
