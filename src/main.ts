@@ -1,24 +1,8 @@
 import { writeFile } from 'fs/promises';
 import path from 'path'
 import db from './db.json'
-import rl from 'readline'
-import { criarProduto, procurarCategoria } from './input-output';
-
-const prompt = rl.createInterface({
-    input: process.stdin,
-    output: process.stdout
-})
-
-const promptPromise = {
-    question: (pergunta:string) => new Promise((resolve, reject) => {
-        try{
-            prompt.question((pergunta), (resposta: string) => resolve(resposta))
-        } catch(error){
-            reject(error)
-        }
-    }),
-    close: () => prompt.close()
-}
+import { criarProduto, perguntarId, perguntarNome, procurarCategoria, perguntarAtributos, confirmarExclusao, perguntarLista, perguntarOrdem, perguntarMenu, perguntarBusca, promptPromise } from './input-output';
+import { randomUUID } from 'crypto';
 
 type Produtos = {
     id: string,
@@ -28,12 +12,10 @@ type Produtos = {
     preco: number
 }
 
-const teste: Produtos[] = db
-    
 const dbJsonPath = path.resolve(process.cwd(),'src/db.json')
 
 async function adicionar (){
-    const novoProduto = await criarProduto()
+    const novoProduto: Produtos = {id:randomUUID(),... await criarProduto()}
     try {
         validarProduto(novoProduto)
     } catch (erro) {
@@ -89,60 +71,85 @@ function listarOrdenado(op: string){
     if(op === '3') console.table(db.sort((a, b) => a.quantidadeNoEstoque - b.quantidadeNoEstoque));
 }
 
-function atualizarPorId(id:string, dadosNovos: Produtos){
+async function atualizarPorId(){
+    const id = await perguntarId()
     const index = db.findIndex(produto => produto.id === id)
-    const product = db.find(produto => produto.id === id)
-    if(index === -1){
+    const produtoEncontrado = db.find(produto => produto.id === id)
+    if(!produtoEncontrado){
+        promptPromise.close()
         return console.log("Id inválido")
     }
-    teste[index] = {id: id, categoria: dadosNovos.categoria, nome: dadosNovos.nome, preco: dadosNovos.preco, quantidadeNoEstoque: dadosNovos.quantidadeNoEstoque}
-    writeFile(dbJsonPath, JSON.stringify(teste, null, 2))
+    const produtoAtualizado: Produtos = {id:id,... await perguntarAtributos(produtoEncontrado)}
+    try {
+        validarProduto(produtoAtualizado)
+    } catch (erro) {
+        return console.error(erro) 
+    }    
+    db[index] = produtoAtualizado;
+    writeFile(dbJsonPath, JSON.stringify(db, null, 2))
 }
 
-async function deletarProduto(id: string){
-    const foundProduct = db.find(produto => produto.id === id)
+async function deletarProduto(){
+    const id = await perguntarId()
+    const produtoEncontrado = db.find(produto => produto.id === id)
     
-    if(!foundProduct){
+    if(!produtoEncontrado){
+        promptPromise.close()
         return console.log(`O id ${id} não foi encontrado. Verifique se foi inserido o id correto`)
     }
+    console.log(`Produto encontrado: ${JSON.stringify(produtoEncontrado, null, 2)}`)
 
-    const confirmacaoExclusão = await promptPromise.question(`Tem certeza que gostaria de excluir o seguinte produto? ${JSON.stringify(foundProduct, null, 2)}\n\n[y/N]: `)
-    promptPromise.close()
+    const confirmacaoExclusão = await confirmarExclusao()
 
-    if(confirmacaoExclusão === 'y'){
-        console.log('Yes')
+    if(confirmacaoExclusão === 's'){
+        console.log('\nSim')
         const produtosAtualizados = db.filter(produto => produto.id != id)
         await writeFile(dbJsonPath, JSON.stringify(produtosAtualizados, null, 2))
-        return console.log('Exclusão realizada')
+        return console.log('Exclusão realizada!')
     }
 
-    console.log('No\nExclusão cancelada')
-    
+    console.log('Não\nExclusão cancelada')
 }
 
-function procurarPorId(id: string){
-    const foundProduct = db.find(produto => produto.id === id)
+async function procurarPorId(){
+    const id = await perguntarId('1')
+    const produtoEncontrado = db.find(produto => produto.id === id)
     
-    if(!foundProduct){
+    if(!produtoEncontrado){
         return console.log(`O produto de id ${id} não foi encontrado. Verifique se foi inserido o id correto`)
     }
 
-    return console.log({foundProduct})
+    return console.log({produtoEncontrado})
 }
 
-function procurarPorNome(nome: string){
-    const foundProduct = db.find(produto => produto.nome.toUpperCase().includes(nome.toUpperCase()))
+async function procurarPorNome(){
+    const nome = String(await perguntarNome())
+    const produtoEncontrado = db.find(produto => produto.nome.toUpperCase().includes(nome.toUpperCase()))
     
-    if(!foundProduct){
-        return console.log(`O produto de id ${nome} não foi encontrado. Verifique se foi inserido o id correto`)
+    if(!produtoEncontrado){
+        return console.log(`O produto com nome ${nome} não foi encontrado. Verifique se foi inserido o id correto`)
     }
 
-    return console.log({foundProduct})
+    return console.log({produtoEncontrado})
+}
+
+async function buscar() {
+    switch (String(await perguntarBusca())) {
+        case '1':
+            await procurarPorId()
+            break;
+        case '2':
+            await procurarPorNome()
+            break;
+        default:
+            promptPromise.close()
+            console.log('Escolha inválida!\nEncerrando busca!')
+            break;
+    }
 }
 
 async function listar(){
-    const op = await promptPromise.question('Escolha uma das seguintes opções para listagem:\n1. Listagem geral.\n2. Listagem filtrada por categoria.\n3. Listagem ordenada.\n\nDigite o número da opção desejada: ')
-    switch (op) {
+    switch (String(await perguntarLista())) {
         case '1':
             listarTodos()
             break;
@@ -150,26 +157,37 @@ async function listar(){
             await listarPorCategoria()
             break;
         case '3':
-            const ordem = String (await promptPromise.question('Escolha uma das seguintes opções para ordenar:\n1. Por nome.\n2. Por preço.\n3. Por quantidade no estoque.\n\nDigite o número da opção desejada: '))
-            listarOrdenado(ordem)
+            listarOrdenado(String(await perguntarOrdem()))
             break; 
         default:
+            promptPromise.close()
             console.log('Escolha inválida!\nEncerrando listagem')
             break;
     }
-    promptPromise.close()
-
 }
 
-// adicionar()
-// adicionar(nsei)
-// listarTodos()
-// listarPorCategoria('te cnologia')
-// listarOrdenado(1)
-// listarOrdenado(2)
-// listarOrdenado(3)
-// deletarProduto('c6add5ef-e647-4330-8e84-dc71a6e865bf')
-// atualizarPorId('c6add5ef-e647-4330-8e84-dc71a6e865bf', krl)
-// procurarPorId('350a4fb3-b7cd-4819-a8af-9006e33258')
-// procurarPorNome('MOUSEP')
-listar()
+async function menu() {
+    switch (String(await perguntarMenu())) {
+        case '1':
+            await adicionar()
+            break;
+        case '2':
+            await listar()
+            break;
+        case '3':
+            await atualizarPorId()
+            break; 
+        case '4':
+            await deletarProduto()
+            break; 
+        case '5':
+            await buscar()
+            break; 
+        default:
+            promptPromise.close()
+            console.log('Escolha inválida!\nEncerrando programa!')
+            break;
+    }
+}
+
+menu()
